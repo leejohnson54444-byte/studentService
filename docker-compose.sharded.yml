@@ -1,0 +1,486 @@
+version: '3.8'
+
+# Production-grade MongoDB Sharded Cluster with Load Balancing
+# This configuration provides:
+# - Config Servers (3 node replica set for metadata)
+# - Shard 1 (3 node replica set)
+# - Shard 2 (3 node replica set)
+# - MongoDB Router (mongos)
+# - Multiple API instances with NGINX load balancer
+# - Blazor WebApp
+# - MLflow for ML model tracking
+
+services:
+  # ==================== Blazor WebApp (UI) ====================
+  webapp:
+    build:
+      context: .
+      dockerfile: StudentService.WebApp/StudentService.WebApp/Dockerfile
+    container_name: student-webapp
+    ports:
+      - "5001:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_HTTP_PORTS=8080
+      - ApiSettings__BaseUrl=http://localhost/
+    depends_on:
+      - nginx
+    networks:
+      - student-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ==================== NGINX Load Balancer ====================
+  nginx:
+    image: nginx:alpine
+    container_name: nginx-loadbalancer
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api1
+      - api2
+      - api3
+    networks:
+      - student-network
+    restart: unless-stopped
+
+  # ==================== API Instances ====================
+  api1:
+    build:
+      context: .
+      dockerfile: StudentService.API/Dockerfile
+    container_name: student-api-1
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_HTTP_PORTS=8080
+      - MongoDB__ConnectionString=mongodb://mongos1:27017,mongos2:27017
+      - MongoDB__DatabaseName=student_service_DB
+      - Elasticsearch__Uri=${ELASTICSEARCH_URI}
+      - Elasticsearch__ApiKey=${ELASTICSEARCH_APIKEY}
+      - Elasticsearch__IndexName=jobs
+      - OpenAI__ApiKey=${OPENAI_APIKEY}
+      - MLflow__TrackingUri=http://mlflow:5000
+      - MLflow__ModelStoragePath=/app/models
+      - MLflow__AutoTrainingEnabled=true
+      - MLflow__TrainingIntervalHours=24
+      - DataSeeder__AutoSeederEnabled=false
+    volumes:
+      - model-storage:/app/models
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+      mlflow:
+        condition: service_started
+    networks:
+      - student-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  api2:
+    build:
+      context: .
+      dockerfile: StudentService.API/Dockerfile
+    container_name: student-api-2
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_HTTP_PORTS=8080
+      - MongoDB__ConnectionString=mongodb://mongos1:27017,mongos2:27017
+      - MongoDB__DatabaseName=student_service_DB
+      - Elasticsearch__Uri=${ELASTICSEARCH_URI}
+      - Elasticsearch__ApiKey=${ELASTICSEARCH_APIKEY}
+      - Elasticsearch__IndexName=jobs
+      - OpenAI__ApiKey=${OPENAI_APIKEY}
+      - MLflow__TrackingUri=http://mlflow:5000
+      - MLflow__ModelStoragePath=/app/models
+      - MLflow__AutoTrainingEnabled=false
+      - DataSeeder__AutoSeederEnabled=false
+    volumes:
+      - model-storage:/app/models
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+      mlflow:
+        condition: service_started
+    networks:
+      - student-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  api3:
+    build:
+      context: .
+      dockerfile: StudentService.API/Dockerfile
+    container_name: student-api-3
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_HTTP_PORTS=8080
+      - MongoDB__ConnectionString=mongodb://mongos1:27017,mongos2:27017
+      - MongoDB__DatabaseName=student_service_DB
+      - Elasticsearch__Uri=${ELASTICSEARCH_URI}
+      - Elasticsearch__ApiKey=${ELASTICSEARCH_APIKEY}
+      - Elasticsearch__IndexName=jobs
+      - OpenAI__ApiKey=${OPENAI_APIKEY}
+      - MLflow__TrackingUri=http://mlflow:5000
+      - MLflow__ModelStoragePath=/app/models
+      - MLflow__AutoTrainingEnabled=false
+      - DataSeeder__AutoSeederEnabled=false
+    volumes:
+      - model-storage:/app/models
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+      mlflow:
+        condition: service_started
+    networks:
+      - student-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ==================== MLflow Tracking Server ====================
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.10.0
+    container_name: mlflow-server
+    ports:
+      - "5000:5000"
+    environment:
+      - MLFLOW_BACKEND_STORE_URI=sqlite:///mlflow/mlflow.db
+      - MLFLOW_DEFAULT_ARTIFACT_ROOT=/mlflow/artifacts
+    volumes:
+      - mlflow-data:/mlflow
+    command: >
+      mlflow server
+      --backend-store-uri sqlite:///mlflow/mlflow.db
+      --default-artifact-root /mlflow/artifacts
+      --host 0.0.0.0
+      --port 5000
+    networks:
+      - student-network
+    restart: unless-stopped
+
+  # ==================== MongoDB Config Servers ====================
+  configsvr1:
+    image: mongo:7.0
+    container_name: configsvr1
+    command: mongod --configsvr --replSet configRS --bind_ip_all --port 27019
+    volumes:
+      - configsvr1_data:/data/db
+    networks:
+      - student-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--port", "27019", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  configsvr2:
+    image: mongo:7.0
+    container_name: configsvr2
+    command: mongod --configsvr --replSet configRS --bind_ip_all --port 27019
+    volumes:
+      - configsvr2_data:/data/db
+    networks:
+      - student-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--port", "27019", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  configsvr3:
+    image: mongo:7.0
+    container_name: configsvr3
+    command: mongod --configsvr --replSet configRS --bind_ip_all --port 27019
+    volumes:
+      - configsvr3_data:/data/db
+    networks:
+      - student-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--port", "27019", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ==================== Shard 1 Replica Set ====================
+  shard1-primary:
+    image: mongo:7.0
+    container_name: shard1-primary
+    command: mongod --shardsvr --replSet shard1RS --bind_ip_all --port 27018
+    volumes:
+      - shard1_primary_data:/data/db
+    networks:
+      - student-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--port", "27018", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  shard1-secondary1:
+    image: mongo:7.0
+    container_name: shard1-secondary1
+    command: mongod --shardsvr --replSet shard1RS --bind_ip_all --port 27018
+    volumes:
+      - shard1_secondary1_data:/data/db
+    networks:
+      - student-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--port", "27018", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  shard1-secondary2:
+    image: mongo:7.0
+    container_name: shard1-secondary2
+    command: mongod --shardsvr --replSet shard1RS --bind_ip_all --port 27018
+    volumes:
+      - shard1_secondary2_data:/data/db
+    networks:
+      - student-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--port", "27018", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ==================== Shard 2 Replica Set ====================
+  shard2-primary:
+    image: mongo:7.0
+    container_name: shard2-primary
+    command: mongod --shardsvr --replSet shard2RS --bind_ip_all --port 27018
+    volumes:
+      - shard2_primary_data:/data/db
+    networks:
+      - student-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--port", "27018", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  shard2-secondary1:
+    image: mongo:7.0
+    container_name: shard2-secondary1
+    command: mongod --shardsvr --replSet shard2RS --bind_ip_all --port 27018
+    volumes:
+      - shard2_secondary1_data:/data/db
+    networks:
+      - student-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--port", "27018", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  shard2-secondary2:
+    image: mongo:7.0
+    container_name: shard2-secondary2
+    command: mongod --shardsvr --replSet shard2RS --bind_ip_all --port 27018
+    volumes:
+      - shard2_secondary2_data:/data/db
+    networks:
+      - student-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--port", "27018", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ==================== MongoDB Routers (mongos) ====================
+  mongos1:
+    image: mongo:7.0
+    container_name: mongos1
+    command: mongos --configdb configRS/configsvr1:27019,configsvr2:27019,configsvr3:27019 --bind_ip_all --port 27017
+    ports:
+      - "27017:27017"
+    depends_on:
+      configsvr1:
+        condition: service_healthy
+      configsvr2:
+        condition: service_healthy
+      configsvr3:
+        condition: service_healthy
+      shard1-primary:
+        condition: service_healthy
+      shard2-primary:
+        condition: service_healthy
+    networks:
+      - student-network
+    restart: unless-stopped
+
+  mongos2:
+    image: mongo:7.0
+    container_name: mongos2
+    command: mongos --configdb configRS/configsvr1:27019,configsvr2:27019,configsvr3:27019 --bind_ip_all --port 27017
+    ports:
+      - "27018:27017"
+    depends_on:
+      configsvr1:
+        condition: service_healthy
+      configsvr2:
+        condition: service_healthy
+      configsvr3:
+        condition: service_healthy
+      shard1-primary:
+        condition: service_healthy
+      shard2-primary:
+        condition: service_healthy
+    networks:
+      - student-network
+    restart: unless-stopped
+
+  # ==================== Cluster Initialization ====================
+  mongo-init:
+    image: mongo:7.0
+    container_name: mongo-cluster-init
+    depends_on:
+      - configsvr1
+      - configsvr2
+      - configsvr3
+      - shard1-primary
+      - shard1-secondary1
+      - shard1-secondary2
+      - shard2-primary
+      - shard2-secondary1
+      - shard2-secondary2
+      - mongos1
+      - mongos2
+    networks:
+      - student-network
+    command: >
+      bash -c "
+        echo 'Waiting for MongoDB instances to start...';
+        sleep 30;
+        
+        echo 'Initializing Config Server Replica Set...';
+        mongosh --host configsvr1:27019 --eval '
+          rs.initiate({
+            _id: \"configRS\",
+            configsvr: true,
+            members: [
+              { _id: 0, host: \"configsvr1:27019\" },
+              { _id: 1, host: \"configsvr2:27019\" },
+              { _id: 2, host: \"configsvr3:27019\" }
+            ]
+          })
+        ' || echo 'Config RS may already be initialized';
+        
+        sleep 15;
+        
+        echo 'Initializing Shard 1 Replica Set...';
+        mongosh --host shard1-primary:27018 --eval '
+          rs.initiate({
+            _id: \"shard1RS\",
+            members: [
+              { _id: 0, host: \"shard1-primary:27018\", priority: 2 },
+              { _id: 1, host: \"shard1-secondary1:27018\", priority: 1 },
+              { _id: 2, host: \"shard1-secondary2:27018\", priority: 1 }
+            ]
+          })
+        ' || echo 'Shard1 RS may already be initialized';
+        
+        echo 'Initializing Shard 2 Replica Set...';
+        mongosh --host shard2-primary:27018 --eval '
+          rs.initiate({
+            _id: \"shard2RS\",
+            members: [
+              { _id: 0, host: \"shard2-primary:27018\", priority: 2 },
+              { _id: 1, host: \"shard2-secondary1:27018\", priority: 1 },
+              { _id: 2, host: \"shard2-secondary2:27018\", priority: 1 }
+            ]
+          })
+        ' || echo 'Shard2 RS may already be initialized';
+        
+        echo 'Waiting for replica sets to elect primaries...';
+        sleep 30;
+        
+        echo 'Adding shards to cluster...';
+        mongosh --host mongos1:27017 --eval '
+          sh.addShard(\"shard1RS/shard1-primary:27018,shard1-secondary1:27018,shard1-secondary2:27018\");
+          sh.addShard(\"shard2RS/shard2-primary:27018,shard2-secondary1:27018,shard2-secondary2:27018\");
+        ' || echo 'Shards may already be added';
+        
+        sleep 5;
+        
+        echo 'Enabling sharding for database...';
+        mongosh --host mongos1:27017 --eval '
+          sh.enableSharding(\"student_service_DB\");
+        ' || echo 'Sharding may already be enabled';
+        
+        sleep 2;
+        
+        echo 'Sharding collections...';
+        mongosh --host mongos1:27017 --eval '
+          // Create collections first if they do not exist
+          db = db.getSiblingDB(\"student_service_DB\");
+          
+          // Shard collections with appropriate keys
+          sh.shardCollection(\"student_service_DB.students\", { \"_id\": \"hashed\" });
+          sh.shardCollection(\"student_service_DB.jobs\", { \"_id\": \"hashed\" });
+          sh.shardCollection(\"student_service_DB.applications\", { \"_id\": \"hashed\" });
+          sh.shardCollection(\"student_service_DB.companies\", { \"_id\": \"hashed\" });
+        ' || echo 'Collections may already be sharded';
+        
+        echo 'MongoDB Sharded Cluster initialized successfully!';
+        
+        echo 'Verifying cluster status...';
+        mongosh --host mongos1:27017 --eval 'sh.status()';
+      "
+    restart: "no"
+
+volumes:
+  configsvr1_data:
+  configsvr2_data:
+  configsvr3_data:
+  shard1_primary_data:
+  shard1_secondary1_data:
+  shard1_secondary2_data:
+  shard2_primary_data:
+  shard2_secondary1_data:
+  shard2_secondary2_data:
+  mlflow-data:
+  model-storage:
+
+networks:
+  student-network:
+    driver: bridge

@@ -1,0 +1,424 @@
+﻿@page "/company/job/{id}"
+@inject HttpClient _http
+@inject IJSRuntime JS
+@using StudentService.Domain.DTOs
+@using System.Text.Json
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-6">
+    <MudPaper Elevation="4" Class="pa-4 rounded-xl">
+        <MudGrid>
+            <MudItem xs="12">
+                <MudText Typo="Typo.h5" GutterBottom="true">@job?.Title</MudText>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudText Color="Color.Primary" Typo="Typo.subtitle2">Vrsta posla</MudText>
+                <MudText Typo="Typo.body1">@job?.Type</MudText>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudText Color="Color.Primary" Typo="Typo.subtitle2">Period rada</MudText>
+                <MudText Typo="Typo.body1">
+                    @job?.StartDate.ToString("dd.MM.yyyy") - @job?.EndDate.ToString("dd.MM.yyyy")
+                </MudText>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudText Color="Color.Primary" Typo="Typo.subtitle2">Mjesto rada</MudText>
+                <MudText Typo="Typo.body1">@job?.PlaceOfWork</MudText>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudText Color="Color.Primary" Typo="Typo.subtitle2">Satnica</MudText>
+                <MudText Typo="Typo.body1">@job?.HourlyPay€</MudText>
+            </MudItem>
+
+            @if (!string.IsNullOrWhiteSpace(job?.Description))
+            {
+                <MudItem xs="12">
+                    <MudText Color="Color.Primary" Typo="Typo.subtitle2">Opis posla</MudText>
+                    @foreach (var para in (job.Description ?? string.Empty).Split(new[] { "\n\n" }, StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        <MudText Typo="Typo.body2" Class="mb-2">@para</MudText>
+                    }
+                </MudItem>
+            }
+
+            @if (job?.RequiredTraits != null && job.RequiredTraits.Any())
+            {
+                <MudItem xs="12">
+                    <MudText Color="Color.Primary" Typo="Typo.subtitle2">Potrebne vještine</MudText>
+                    <MudChips T="string">
+                        @foreach (var trait in job.RequiredTraits)
+                        {
+                            <MudChip Color="Color.Secondary" Variant="Variant.Outlined" Class="ma-1" T="string">
+                                @trait
+                            </MudChip>
+                        }
+                    </MudChips>
+                </MudItem>
+            }
+        </MudGrid>
+
+        <MudDivider Class="my-4" />
+
+        <div class="mt-4">
+            @if (job == null)
+            {
+                <MudText>Učitavanje...</MudText>
+            }
+            else if (today < job.StartDate.Date)
+            {
+                <MudExpansionPanels>
+                    <MudExpansionPanel Text="Pogledaj prijave">
+                        @if (recommendations == null)
+                        {
+                            <MudText>Učitavanje prijava...</MudText>
+                        }
+                        else if (!recommendations.Any())
+                        {
+                            <MudText>Nema prijava za ovaj posao.</MudText>
+                        }
+                        else
+                        {
+                            <MudExpansionPanels MultiExpansion="true">
+                                @foreach (var app in recommendations)
+                                {
+                                    if (app.Status == "expired") continue;
+                                    <MudExpansionPanel
+                                        Expanded="@(expandedStudentId == app.StudentBasicInfo?.StudentId)"
+                                        ExpandedChanged="@(async expanded => await OnPanelExpandedChanged(app.StudentBasicInfo?.StudentId, expanded))"
+                                    >
+                                        <TitleContent>
+                                            <div class="d-flex align-items-center w-100">
+                                                <MudText Class="me-2">
+                                                    <b>@app.StudentBasicInfo?.FirstName @app.StudentBasicInfo?.LastName</b>
+                                                </MudText>
+                                                <MudText Class="me-2">(@app.StudentBasicInfo?.StudentId)</MudText>
+                                                <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" Size="Size.Small" OnClick="@(() => CopyOIB(app.StudentBasicInfo?.StudentId))" ToolTip="Kopiraj OIB" />
+
+                                                <div class="ms-auto d-flex align-items-center">
+                                                    @if (app.StudentBasicInfo?.Rating == null || app.StudentBasicInfo?.Rating == 0)
+                                                    {       
+                                                        <MudText Class="me-2">Nema ocjenu</MudText>
+                                                    }
+                                                    else
+                                                    {
+                                                        <MudText Class="me-2">
+                                                            Ocjena: @app.StudentBasicInfo?.Rating?.ToString("0.00")
+                                                        </MudText>
+                                                    }
+
+                                                    <MudSelect T="string"
+                                                               Label="Status"
+                                                               Dense="true"
+                                                               Variant="Variant.Outlined"
+                                                               Value="@app.Status"
+                                                               ValueChanged="async (string newStatus) => await OnStatusChanged(app.ApplicationId, newStatus)"
+                                                               Class="ms-10"
+                                                               Style="min-width: 150px; max-width: 160px;">
+                                                        <MudSelectItem Value="@statusHired">zaposli</MudSelectItem>
+                                                        <MudSelectItem Value="@statusRejected">odbij</MudSelectItem>
+                                                    </MudSelect>
+                                                </div>
+                                            </div>
+                                        </TitleContent>
+
+
+                                        <ChildContent>
+                                            @if (app.Status == statusHired)
+                                            {
+                                                <MudChip Color="Color.Success" T="string">zaposlen</MudChip>
+                                            }
+
+                                            @if (expandedStudentId == app.StudentBasicInfo?.StudentId)
+                                            {
+                                                @if (studentDetails == null)
+                                                {
+                                                    <MudText>Učitavanje detalja studenta...</MudText>
+                                                }
+                                                else
+                                                {
+                                                    <MudDivider Class="my-2" />
+
+                                                    <MudText Typo="Typo.subtitle2">Povijest poslova:</MudText>
+                                                    @if (studentDetails.JobTypesHistory != null && studentDetails.JobTypesHistory.Any())
+                                                    {
+                                                        <MudList T="string">
+                                                            @foreach (var jt in studentDetails.JobTypesHistory)
+                                                            {
+                                                                <MudListItem T="string">
+                                                                    @jt.Type: @jt.Count puta
+                                                                </MudListItem>
+                                                            }
+                                                        </MudList>
+                                                    }
+                                                    else
+                                                    {
+                                                        <MudText Typo="Typo.body2" Class="mb-2">Nema povijesti poslova.</MudText>
+                                                    }
+
+                                                    <MudText Typo="Typo.subtitle2">Karakteristike:</MudText>
+                                                    @if (studentDetails.Traits != null && studentDetails.Traits.Any())
+                                                    {
+                                                        <MudChips T="string">
+                                                            @foreach (var trait in studentDetails.Traits)
+                                                            {
+                                                                <MudChip Color="Color.Info" T="string">
+                                                                    @trait.Name (pozitivno: @trait.Positive, negativno: @trait.Negative)
+                                                                </MudChip>
+                                                            }
+                                                        </MudChips>
+                                                    }
+                                                    else
+                                                    {
+                                                        <MudText Typo="Typo.body2">Nema karakteristika.</MudText>
+                                                    }
+                                                }
+                                            }
+                                        </ChildContent>
+                                    </MudExpansionPanel>
+                                }
+                            </MudExpansionPanels>
+                        }
+                    </MudExpansionPanel>
+                </MudExpansionPanels>
+            }
+            else if (today >= job.StartDate.Date && today <= job.EndDate.Date)
+            {
+                <MudText Color="Color.Info">Ovaj posao je u tijeku.</MudText>
+            }
+            else if (today > job.EndDate.Date)
+            {
+                @if (applications == null)
+                {
+                    <MudText>Učitavanje prijava...</MudText>
+                }
+                else if (!applications.Any())
+                {
+                    <MudText>Svi su studenti ocijenjeni.</MudText>
+                }
+                else
+                {
+                    <MudExpansionPanels>
+                        <MudExpansionPanel Text="Ocijeni">
+                            <MudExpansionPanels>
+                                @foreach (var app in applications)
+                                {
+                                    <MudExpansionPanel
+                                        Expanded="@(expandedStudentId == app.StudentBasicInfo?.StudentId)"
+                                        ExpandedChanged="@(async expanded => await OnPanelExpandedChanged(app.StudentBasicInfo?.StudentId, expanded))"
+                                    >
+                                        <TitleContent>
+                                            <div class="d-flex align-items-center w-100">
+                                                <MudText>
+                                                    @app.StudentBasicInfo?.FirstName @app.StudentBasicInfo?.LastName (@app.StudentBasicInfo?.StudentId)
+                                                </MudText>
+                                                <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" Size="Size.Small" OnClick="@(() => CopyOIB(app.StudentBasicInfo?.StudentId))" ToolTip="Kopiraj OIB" />
+                                                <MudText Class="ms-3">
+                                                    Ocjena:
+                                                    @((app.StudentBasicInfo?.Rating?.ToString("0.00")) ?? "N/A")
+                                                </MudText>
+                                                <MudIconButton
+                                                    Icon="@Icons.Material.Filled.ThumbUp"
+                                                    Color="Color.Success"
+                                                    OnClick="() => RateStudent(app.ApplicationId, true)"
+                                                    Class="ms-auto"
+                                                />
+                                                <MudIconButton
+                                                    Icon="@Icons.Material.Filled.ThumbDown"
+                                                    Color="Color.Error"
+                                                    OnClick="() => RateStudent(app.ApplicationId, false)"
+                                                    Class="ms-2"
+                                                />
+                                            </div>
+                                        </TitleContent>
+
+                                        <ChildContent>
+                                            @if (expandedStudentId == app.StudentBasicInfo?.StudentId)
+                                            {
+                                                @if (studentDetails == null)
+                                                {
+                                                    <MudText>Učitavanje detalja studenta...</MudText>
+                                                }
+                                                else
+                                                {
+                                                    <MudText Typo="Typo.subtitle2">Povijest poslova:</MudText>
+                                                    <MudList T="string">
+                                                        @foreach (var jt in studentDetails.JobTypesHistory ?? new List<JobTypeHistoryInfo>())
+                                                        {
+                                                            <MudListItem T="string">
+                                                                @jt.Type: @jt.Count puta
+                                                            </MudListItem>
+                                                        }
+                                                    </MudList>
+
+                                                    <MudText Typo="Typo.subtitle2">Karakteristike:</MudText>
+                                                    <MudChips T="string">
+                                                        @foreach (var trait in studentDetails.Traits ?? new List<TraitInfo>())
+                                                        {
+                                                            <MudChip Color="Color.Info" T="string">
+                                                                @trait.Name (pozitivno: @trait.Positive, negativno: @trait.Negative)
+                                                            </MudChip>
+                                                        }
+                                                    </MudChips>
+                                                }
+                                            }
+                                        </ChildContent>
+                                    </MudExpansionPanel>
+                                }
+                            </MudExpansionPanels>
+                        </MudExpansionPanel>
+                    </MudExpansionPanels>
+                }
+            }
+        </div>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    [Parameter]
+    public string id { get; set; }
+
+    private JobDetailInfo? job;
+    private List<ApplicationInfo>? recommendations;
+    private List<ApplicationInfo>? applications;
+    private DateTime today = DateTime.Now;
+    private string? expandedStudentId;
+    private StudentDetailInfo? studentDetails;
+    private bool isLoading = true;
+
+    private string statusHired = "hired";
+    private string statusRejected = "expired";
+    private string statusPending = "na čekanju";
+
+    private static readonly JsonSerializerOptions _jsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadJobDetails();
+        isLoading = false;
+    }
+
+    private async Task LoadJobDetails()
+    {
+        try
+        {
+            var response = await _http.GetAsync($"Jobs/{id}/detailed");
+            if (response.IsSuccessStatusCode)
+            {
+                var content = await response.Content.ReadAsStringAsync();
+                job = JsonSerializer.Deserialize<JobDetailInfo>(content, _jsonOptions);
+            }
+            await LoadApplications();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading job details: {ex.Message}");
+        }
+    }
+
+    private async Task LoadApplications()
+    {
+        if (job == null) return;
+
+        try
+        {
+            if (today < job.StartDate.Date)
+            {
+                // Use the basic recommendations endpoint which returns ApplicationInfo[]
+                var response = await _http.GetAsync($"Applications/{id}/recommendations/basic");
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    var result = JsonSerializer.Deserialize<List<ApplicationInfo>>(content, _jsonOptions);
+                    recommendations = result ?? new List<ApplicationInfo>();
+                }
+                else
+                {
+                    Console.WriteLine($"API returned status: {response.StatusCode}");
+                    recommendations = new List<ApplicationInfo>();
+                }
+            }
+            else if (today > job.EndDate.Date)
+            {
+                var response = await _http.GetAsync($"Applications/finished/{id}/job");
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    var result = JsonSerializer.Deserialize<List<ApplicationInfo>>(content, _jsonOptions);
+                    applications = result ?? new List<ApplicationInfo>();
+                }
+                else
+                {
+                    applications = new List<ApplicationInfo>();
+                }
+            }
+            else
+            {
+                recommendations = new List<ApplicationInfo>();
+                applications = new List<ApplicationInfo>();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading applications: {ex.Message}");
+            recommendations = new List<ApplicationInfo>();
+            applications = new List<ApplicationInfo>();
+        }
+        
+        StateHasChanged();
+    }
+    
+    private async Task RateStudent(string applicationId, bool isThumbUp)
+    {
+        await _http.PutAsJsonAsync($"Students/rating", new { ApplicationId = applicationId, IsThumbUp = isThumbUp });
+        await LoadApplications();
+    }
+
+    private async Task OnPanelExpandedChanged(string? studentId, bool expanded)
+    {
+        if (string.IsNullOrEmpty(studentId)) return;
+        
+        if (expanded)
+        {
+            expandedStudentId = studentId;
+            var response = await _http.GetAsync($"Students/{studentId}/detailed");
+            if (response.IsSuccessStatusCode)
+            {
+                var content = await response.Content.ReadAsStringAsync();
+                studentDetails = JsonSerializer.Deserialize<StudentDetailInfo>(content, _jsonOptions);
+            }
+            StateHasChanged();
+        }
+        else
+        {
+            if (expandedStudentId == studentId)
+            {
+                expandedStudentId = null;
+                studentDetails = null;
+            }
+        }
+    }
+
+    private async Task OnStatusChanged(string applicationId, string newStatus)
+    {
+        if (string.IsNullOrEmpty(newStatus))
+            return;
+
+        var response = await _http.PutAsJsonAsync(
+            $"Applications/{applicationId}/status?status={newStatus}", 
+            new { }
+        );
+
+        if (response.IsSuccessStatusCode)
+        {
+            await LoadApplications();
+        }
+    }
+
+    private async Task CopyOIB(string? oib)
+    {
+        if (!string.IsNullOrEmpty(oib))
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", oib);
+    }
+}

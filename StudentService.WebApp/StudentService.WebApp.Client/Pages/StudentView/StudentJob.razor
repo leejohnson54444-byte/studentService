@@ -1,0 +1,114 @@
+﻿@page "/student/{studentId}/job/{jobId}"
+@inject HttpClient _http
+@inject NavigationManager _nav
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-6">
+    <MudPaper Elevation="4" Class="pa-4 rounded-xl">
+        @if (job == null)
+        {
+            <MudText>Učitavanje...</MudText>
+        }
+        else
+        {
+            <MudGrid RowSpacing="2" ColumnSpacing="2">
+                <MudItem xs="12">
+                    <MudText Typo="Typo.h5" GutterBottom="true">@job.Title</MudText>
+                </MudItem>
+
+                @if (!string.IsNullOrWhiteSpace(job.CompanyName))
+                {
+                    <MudItem xs="12" sm="6">
+                        <MudText Color="Color.Primary" Typo="Typo.subtitle2">Tvrtka</MudText>
+                        <MudText Typo="Typo.body1">@job.CompanyName</MudText>
+                    </MudItem>
+                }
+
+                <MudItem xs="12" sm="6">
+                    <MudText Color="Color.Primary" Typo="Typo.subtitle2">Vrsta posla</MudText>
+                    <MudText Typo="Typo.body1">@job.Type</MudText>
+                </MudItem>
+
+                <MudItem xs="12" sm="6">
+                    <MudText Color="Color.Primary" Typo="Typo.subtitle2">Period rada</MudText>
+                    <MudText Typo="Typo.body1">
+                        @job.StartDate.ToString("dd.MM.yyyy") – @job.EndDate.ToString("dd.MM.yyyy")
+                    </MudText>
+                </MudItem>
+
+                <MudItem xs="12" sm="6">
+                    <MudText Color="Color.Primary" Typo="Typo.subtitle2">Mjesto rada</MudText>
+                    <MudText Typo="Typo.body1">@job.PlaceOfWork</MudText>
+                </MudItem>
+
+                <MudItem xs="12" sm="6">
+                    <MudText Color="Color.Primary" Typo="Typo.subtitle2">Satnica</MudText>
+                    <MudText Typo="Typo.body1">@job.HourlyPay €</MudText>
+                </MudItem>
+
+                @if (!string.IsNullOrWhiteSpace(job.Description))
+                {
+                    <MudItem xs="12">
+                        <MudText Color="Color.Primary" Typo="Typo.subtitle2">Opis posla</MudText>
+                        @foreach (var para in job.Description.Split(new[] { "\n\n", "\n" }, StringSplitOptions.RemoveEmptyEntries))
+                        {
+                            <MudText Typo="Typo.body2" Class="mb-2">@para</MudText>
+                        }
+                    </MudItem>
+                }
+
+                @if (job.RequiredTraits != null && job.RequiredTraits.Any())
+                {
+                    <MudItem xs="12">
+                        <MudText Color="Color.Primary" Typo="Typo.subtitle2">Potrebne vještine</MudText>
+                        <MudChips T="string">
+                            @foreach (var trait in job.RequiredTraits)
+                            {
+                                <MudChip Color="Color.Secondary" Variant="Variant.Outlined" Class="ma-1" T="string">
+                                    @trait
+                                </MudChip>
+                            }
+                        </MudChips>
+                    </MudItem>
+                }
+            </MudGrid>
+
+            <MudDivider Class="my-4" />
+
+            <MudGrid>
+                <MudItem xs="12" Class="d-flex justify-end mr-20">
+                    @if (!applied)
+                    {
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Apply">
+                            Prijavi se
+                        </MudButton>
+                    }
+                    else
+                    {
+                        <MudText Color="Color.Success">Prijava uspješna!</MudText>
+                    }
+                </MudItem>
+            </MudGrid>
+        }
+    </MudPaper>
+</MudContainer>
+
+@code {
+    [Parameter] public string studentId { get; set; }
+    [Parameter] public string jobId { get; set; }
+
+    private JobDetailInfo? job;
+    private bool applied = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        job = await _http.GetFromJsonAsync<JobDetailInfo>($"Jobs/{jobId}/detailed");
+    }
+
+    private async Task Apply()
+    {
+        var request = new ApplicationCreate { StudentId = studentId, JobId = jobId };
+        var response = await _http.PostAsJsonAsync("Applications", request);
+        if (response.IsSuccessStatusCode)
+            applied = true;
+    }
+}

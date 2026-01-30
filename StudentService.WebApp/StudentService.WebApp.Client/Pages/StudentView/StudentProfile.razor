@@ -1,0 +1,80 @@
+﻿@page "/student/{studentId}/profile"
+@inject HttpClient _http
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-10 mb-10">
+    <MudPaper Elevation="4" Class="pa-6 rounded-xl">
+        @if (student == null)
+        {
+            <MudText Align="Align.Center" Typo="Typo.h6">Učitavanje…</MudText>
+        }
+        else
+        {
+            <MudGrid AlignItems="Center" Class="mb-6">
+                <MudItem xs="12" sm="10">
+                    <MudText Typo="Typo.h4" GutterBottom="true">
+                        @student.FirstName @student.LastName
+                    </MudText>
+                    <MudChip Color="Color.Warning" Variant="Variant.Filled" Class="ma-0" T="string">
+                        Ocjena: @(student.Rating?.ToString("0.00") ?? "N/A")
+                    </MudChip>
+                </MudItem>
+            </MudGrid>
+
+            <MudDivider Class="mb-6" />
+
+            <MudGrid RowSpacing="4" ColumnSpacing="4">
+                <MudItem xs="12" md="6">
+                    <MudPaper Elevation="1" Class="pa-4 rounded-lg">
+                        <MudText Typo="Typo.h6" GutterBottom="true">Povijest poslova</MudText>
+                        @if (student.JobTypesHistory == null || !student.JobTypesHistory.Any())
+                        {
+                            <MudText Color="Color.Secondary">Nema povijesti poslova.</MudText>
+                        }
+                        else
+                        {
+                            <MudList Dense="true" T="string">
+                                @foreach (var jt in student.JobTypesHistory)
+                                {
+                                    <MudListItem>
+                                        <MudText Typo="Typo.body2">@jt.Type: @jt.Count puta</MudText>
+                                    </MudListItem>
+                                }
+                            </MudList>
+                        }
+                    </MudPaper>
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudPaper Elevation="1" Class="pa-4 rounded-lg">
+                        <MudText Typo="Typo.h6" GutterBottom="true">Karakteristike</MudText>
+                        @if (student.Traits == null || !student.Traits.Any())
+                        {
+                            <MudText Color="Color.Secondary">Nema zabilježenih karakteristika.</MudText>
+                        }
+                        else
+                        {
+                            <MudChips Class="mt-2" Dense="true">
+                                @foreach (var trait in student.Traits)
+                                {
+                                    <MudChip Color="Color.Info" Variant="Variant.Outlined" Class="ma-1" T="string">
+                                        @trait.Name (pozitivno: @trait.Positive, negativno: @trait.Negative)
+                                    </MudChip>
+                                }
+                            </MudChips>
+                        }
+                    </MudPaper>
+                </MudItem>
+            </MudGrid>
+        }
+    </MudPaper>
+</MudContainer>
+
+@code {
+    [Parameter] public string studentId { get; set; }
+    private StudentDetailInfo? student;
+
+    protected override async Task OnInitializedAsync()
+    {
+        student = await _http.GetFromJsonAsync<StudentDetailInfo>($"Students/{studentId}/detailed");
+    }
+}

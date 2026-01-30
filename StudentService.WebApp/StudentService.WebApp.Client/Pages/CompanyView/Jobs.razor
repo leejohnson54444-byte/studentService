@@ -1,0 +1,106 @@
+﻿@page "/company/home/{companyId}"
+@inject HttpClient _http
+@inject NavigationManager _navigationManager;
+
+<MudContainer>
+    <div class="d-flex justify-center align-center mt-15 mb-4" style="gap: 3rem;">
+        <div class="d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.ThumbUp" Color="Color.Success" Size="Size.Large" />
+            <MudText Typo="Typo.h5" Color="Color.Success" Class="ml-2">@company?.ThumbsUp</MudText>
+        </div>
+
+        <div class="d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.ThumbDown" Color="Color.Error" Size="Size.Large" />
+            <MudText Typo="Typo.h5" Color="Color.Error" Class="ml-2">@company?.ThumbsDown</MudText>
+        </div>
+    </div>
+
+    <MudText Typo="Typo.h5" Align="Align.Center" Class="mb-2">
+        Svi poslovi firme <b>@company?.Name</b>
+    </MudText>
+    <MudDivider Class="mb-6" />
+
+    @if (jobs != null && jobs.Any())
+    {
+        <MudGrid Justify="Justify.Center">
+            @foreach (var job in jobs)
+            {
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Elevation="1" Style="height:100%;" Align="Align.Center">
+                        <MudCardContent>
+                            <!-- Job Title -->
+                            <MudText Typo="Typo.h6" GutterBottom="true">
+                                @job.Title
+                            </MudText>
+
+                            <MudPaper Class="d-flex flex-row flex-grow-1 gap-4 mt-10 mb-5" Elevation="0">
+                                <MudPaper Elevation="0"><MudIcon Icon="@Icons.Material.Filled.Event" Size="Size.Medium" Class="me-1" Color="Color.Primary" /></MudPaper>
+                                <MudPaper Elevation="0">
+                                    <MudText Typo="Typo.caption">
+                                        @job.StartDate.ToString("dd.MM.yyyy") – @job.EndDate.ToString("dd.MM.yyyy")
+                                    </MudText>
+                                </MudPaper>
+                            </MudPaper>
+                            <MudPaper Class="d-flex flex-row flex-grow-1 gap-4" Elevation="0">
+                                <MudPaper Elevation="0"><MudIcon Icon="@Icons.Material.Filled.Place" Size="Size.Medium" Class="me-1" Color="Color.Secondary" /></MudPaper>
+                                <MudPaper Elevation="0">
+                                    <MudText Typo="Typo.caption">
+                                        @job.PlaceOfWork
+                                    </MudText>
+                                </MudPaper>
+                            </MudPaper>
+                        </MudCardContent> 
+
+                        <MudCardActions Class="mt-auto">
+                            <MudSpacer />
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Primary"
+                                       DisableElevation="false"
+                                       @onclick="@(() => _navigationManager.NavigateTo($"/company/job/{job.Id}"))">
+                                Detalji
+                            </MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+    else
+    {
+        <MudGrid Justify="Justify.Center">
+            <MudItem xs="12" sm="8" md="6" lg="4">
+                <MudPaper Elevation="0" Class="text-center py-6">
+                    <MudText Typo="Typo.subtitle1" Color="Color.Secondary">
+                        Nema objavljenih poslova.
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    }
+
+</MudContainer>
+
+@code {
+
+	[Parameter]
+	public string companyId { get; set; }
+
+	private IEnumerable<JobBasicInfo>? jobs = new List<JobBasicInfo>();
+	private CompanyInfo? company;
+
+	protected override async Task OnInitializedAsync()
+	{
+		await GetByIdAsync(companyId);
+		await GetAllJobsAsync(companyId);
+	}
+
+	private async Task GetAllJobsAsync(string companyId)
+	{
+		jobs = await _http.GetFromJsonAsync<IEnumerable<JobBasicInfo>>($"Jobs/{companyId}/company");
+	}
+
+	private async Task GetByIdAsync(string companyId)
+	{
+		company = await _http.GetFromJsonAsync<CompanyInfo>($"Companies/{companyId}");
+	}
+}

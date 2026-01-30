@@ -1,0 +1,262 @@
+﻿@page "/student/{studentId}/jobs"
+@inject HttpClient _http
+@inject NavigationManager _nav
+@using System.Text.Json
+
+<MudContainer>
+    <MudStack Spacing="1">
+        <MudText Typo="Typo.h4" Align="Align.Center" GutterBottom="false" Class="mt-10 mb-6">
+            Preporučeni poslovi
+        </MudText>
+        <MudDivider Class="mb-6" />
+        <MudTextField T="string" 
+                      Value="@searchQuery" 
+                      ValueChanged="OnSearchChanged"
+                      Placeholder="Pretraži po naslovu ili opisu..." 
+                      Adornment="Adornment.Start" 
+                      AdornmentIcon="@Icons.Material.Filled.Search" 
+                      Immediate="true"
+                      DebounceInterval="300" />
+    </MudStack>
+
+    <div style="height:2.5rem"></div>
+
+    @if (jobs == null)
+    {
+        <MudText Align="Align.Center">Učitavanje...</MudText>
+    }
+    else if (!jobs.Any())
+    {
+        <MudText Align="Align.Center">Nema preporučenih poslova.</MudText>
+    }
+    else
+    {
+        <MudGrid Justify="Justify.Center">
+            @foreach (var recommendation in jobs)
+            {
+                var job = recommendation.Job;
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Elevation="1" Style="height:100%;" Class="d-flex flex-column">
+                        <MudCardContent>
+                            <MudText Typo="Typo.h6" GutterBottom="true" Align="Align.Center">
+                                @job.Title
+                            </MudText>
+
+                            <MudPaper Class="d-flex flex-row flex-grow-1 gap-4 mt-4 mb-2" Elevation="0">
+                                <MudPaper Elevation="0">
+                                    <MudIcon Icon="@Icons.Material.Filled.Event" Size="Size.Medium" Class="me-1" Color="Color.Primary" />
+                                </MudPaper>
+                                <MudPaper Elevation="0">
+                                    <MudText Typo="Typo.caption">
+                                        @job.StartDate.ToString("dd.MM.yyyy") – @job.EndDate.ToString("dd.MM.yyyy")
+                                    </MudText>
+                                </MudPaper>
+                            </MudPaper>
+
+                            <MudPaper Class="d-flex flex-row flex-grow-1 gap-4 mb-2" Elevation="0">
+                                <MudPaper Elevation="0">
+                                    <MudIcon Icon="@Icons.Material.Filled.Place" Size="Size.Medium" Class="me-1" Color="Color.Secondary" />
+                                </MudPaper>
+                                <MudPaper Elevation="0">
+                                    <MudText Typo="Typo.caption">
+                                        @job.PlaceOfWork
+                                    </MudText>
+                                </MudPaper>
+                            </MudPaper>
+
+                            @if (recommendation.Explanations != null && recommendation.Explanations.Any())
+                            {
+                                <MudDivider Class="my-3" />
+                                <MudStack Spacing="1">
+                                    <MudText Typo="Typo.caption" Color="Color.Primary" Class="mb-1 d-flex align-center">
+                                        <MudIcon Icon="@Icons.Material.Filled.Lightbulb" Size="Size.Small" Class="me-2" />
+                                        Zašto preporučujemo:
+                                    </MudText>
+                                    @foreach (var explanation in recommendation.Explanations)
+                                    {
+                                        <MudPaper Elevation="0" Class="d-flex align-start pa-1" Style="background-color: transparent;">
+                                            <MudIcon Icon="@Icons.Material.Outlined.Circle" Size="Size.Small" Color="Color.Dark" Class="me-2 mt-1" Style="font-size: 0.75rem;" />
+                                            <MudText Typo="Typo.caption" Style="font-size: 0.8rem; line-height: 1.4;">
+                                                @explanation.Description
+                                            </MudText>
+                                        </MudPaper>
+                                    }
+                                </MudStack>
+                            }
+                        </MudCardContent>
+
+                        <MudCardActions Class="mt-auto">
+                            <MudSpacer />
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Primary"
+                                       DisableElevation="false"
+                                       @onclick="@(() => _nav.NavigateTo($"/student/{studentId}/job/{job.Id}"))">
+                                Detalji
+                            </MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+
+        <div class="d-flex justify-content-center mt-6 mb-6">
+            <MudButton Variant="Variant.Outlined" Disabled="@(currentPage == 1)" OnClick="PrevPage">Prethodna</MudButton>
+            <MudText Class="mx-4 mt-2">Stranica @currentPage / @totalPages</MudText>
+            <MudButton Variant="Variant.Outlined" Disabled="@(currentPage == totalPages)" OnClick="NextPage">Sljedeća</MudButton>
+        </div>
+    }
+</MudContainer>
+
+@code {
+    [Parameter]
+    public string studentId { get; set; }
+
+    private List<JobRecommendationResult> allRecommendedJobs = new();
+    private IEnumerable<JobRecommendationResult>? jobs;
+    private string searchQuery = string.Empty;
+    private bool isSearching = false;
+
+    private int currentPage = 1;
+    private int pageSize = 20;
+    private int totalPages => (int)Math.Ceiling((double)(filteredCount) / pageSize);
+    private int filteredCount = 0;
+
+    private static readonly JsonSerializerOptions _jsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadRecommendedJobs();
+    }
+
+    private async Task LoadRecommendedJobs()
+    {
+        try
+        {
+            var response = await _http.GetAsync($"Jobs/{studentId}/recommendations/basic");
+            if (response.IsSuccessStatusCode)
+            {
+                var content = await response.Content.ReadAsStringAsync();
+                var recommended = JsonSerializer.Deserialize<IEnumerable<JobRecommendationResult>>(content, _jsonOptions);
+                allRecommendedJobs = recommended?.ToList() ?? new List<JobRecommendationResult>();
+            }
+            else
+            {
+                Console.WriteLine($"API returned status code: {response.StatusCode}");
+                allRecommendedJobs = new List<JobRecommendationResult>();
+            }
+
+            ApplyPaging();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading jobs: {ex.Message}");
+            jobs = Enumerable.Empty<JobRecommendationResult>();
+        }
+    }
+
+    private async Task SearchJobsWithElasticsearch(string query)
+    {
+        try
+        {
+            isSearching = true;
+            var encodedQuery = Uri.EscapeDataString(query);
+            var response = await _http.GetAsync($"Jobs/search?q={encodedQuery}&page={currentPage}&pageSize={pageSize}");
+            
+            if (response.IsSuccessStatusCode)
+            {
+                var content = await response.Content.ReadAsStringAsync();
+                var searchResults = JsonSerializer.Deserialize<IEnumerable<JobBasicInfo>>(content, _jsonOptions);
+                
+                jobs = searchResults?.Select(job => new JobRecommendationResult 
+                { 
+                    Job = job, 
+                    Explanations = null 
+                }).ToList() ?? new List<JobRecommendationResult>();
+                
+                filteredCount = jobs.Count();
+                if (jobs.Count() == pageSize)
+                {
+                    filteredCount = currentPage * pageSize + 1;
+                }
+            }
+            else
+            {
+                Console.WriteLine($"Elasticsearch search returned status code: {response.StatusCode}");
+                jobs = Enumerable.Empty<JobRecommendationResult>();
+                filteredCount = 0;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error searching jobs: {ex.Message}");
+            jobs = Enumerable.Empty<JobRecommendationResult>();
+            filteredCount = 0;
+        }
+        finally
+        {
+            isSearching = false;
+        }
+    }
+
+    private void ApplyPaging()
+    {
+        filteredCount = allRecommendedJobs.Count;
+
+        if (currentPage < 1) currentPage = 1;
+        if (currentPage > totalPages) currentPage = Math.Max(1, totalPages);
+
+        jobs = allRecommendedJobs.Skip((currentPage - 1) * pageSize).Take(pageSize).ToList();
+    }
+
+    private async Task OnSearchChanged(string value)
+    {
+        searchQuery = value;
+        currentPage = 1;
+        
+        if (string.IsNullOrWhiteSpace(searchQuery))
+        {
+            ApplyPaging();
+        }
+        else
+        {
+            await SearchJobsWithElasticsearch(searchQuery);
+        }
+        
+        StateHasChanged();
+    }
+
+    private async Task PrevPage()
+    {
+        if (currentPage > 1)
+        {
+            currentPage--;
+            if (string.IsNullOrWhiteSpace(searchQuery))
+            {
+                ApplyPaging();
+            }
+            else
+            {
+                await SearchJobsWithElasticsearch(searchQuery);
+            }
+        }
+    }
+
+    private async Task NextPage()
+    {
+        if (currentPage < totalPages)
+        {
+            currentPage++;
+            if (string.IsNullOrWhiteSpace(searchQuery))
+            {
+                ApplyPaging();
+            }
+            else
+            {
+                await SearchJobsWithElasticsearch(searchQuery);
+            }
+        }
+    }
+}

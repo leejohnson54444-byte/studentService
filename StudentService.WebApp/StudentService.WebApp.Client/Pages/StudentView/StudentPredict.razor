@@ -1,0 +1,108 @@
+﻿@using StudentService.Domain.Services.Models
+@page "/student/{studentId}/predict"
+@inject HttpClient _http
+
+<MudContainer>
+    <MudText Typo="Typo.h4" Align="Align.Center" Class="mt-10 mb-6">Predvidi satnicu</MudText>
+    <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="TrainModels" Disabled="@loading">Treniraj</MudButton>
+    @if (loading)
+    {
+        <MudProgressCircular Indeterminate Color="Color.Primary" Class="ml-4" />
+    }
+    @if (metrics != null)
+    {
+        <MudTable Items="metrics.Metrics" Hover="true">
+            <HeaderContent>
+                <MudTh>Algoritam</MudTh>
+                <MudTh>MAE</MudTh>
+                <MudTh>MSE</MudTh>
+                <MudTh>RMSE</MudTh>
+                <MudTh>R²</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Algoritam">@context.Algorithm</MudTd>
+                <MudTd DataLabel="MAE">@context.MAE.ToString("0.000")</MudTd>
+                <MudTd DataLabel="MSE">@context.MSE.ToString("0.000")</MudTd>
+                <MudTd DataLabel="RMSE">@context.RMSE.ToString("0.000")</MudTd>
+                <MudTd DataLabel="R²">@context.RSquared.ToString("0.000")</MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+    <MudDivider Class="my-6" />
+    <MudText Typo="Typo.h6">Predviđanje satnice</MudText>
+    <MudForm @ref="form">
+        <MudSelect @bind-Value="selectedAlgorithm" Label="Algoritam" Required>
+            <MudSelectItem Value="@(linearAlgorithm)">Linear (SDCA)</MudSelectItem>
+            <MudSelectItem Value="@(treeAlgorithm)">Stablo (FastTree)</MudSelectItem>
+            <MudSelectItem Value="@(lbfgsAlgorithm)">L-BFGS</MudSelectItem>
+        </MudSelect>
+        <MudSelect @bind-Value="selectedJobType" Label="Kategorija posla" Required>
+            @foreach (var jt in jobTypes)
+            {
+                <MudSelectItem Value="@jt">@jt</MudSelectItem>
+            }
+        </MudSelect>
+        <MudSelect T="string" Label="Potrebne vještine" MultiSelection="true" @bind-SelectedValues="_selectedTraits">
+            @foreach (var trait in traits)
+            {
+                <MudSelectItem Value="@trait">@trait</MudSelectItem>
+            }
+        </MudSelect>
+        <MudTextField Label="Mjesto rada" @bind-Value="placeOfWork" />
+        <MudButton Color="Color.Secondary" Variant="Variant.Filled" Type="Submit" Class="mt-4" OnClick="PredictPay">Predvidi</MudButton>
+    </MudForm>
+    @if (predictedPay != null)
+    {
+        <MudAlert Severity="Severity.Info" Class="mt-4">Predviđena satnica: <b>@predictedPay.Value.ToString("0.00") €</b></MudAlert>
+    }
+</MudContainer>
+
+@code {
+    [Parameter] public string studentId { get; set; }
+    private bool loading = false;
+    private AllJobPayPredictionMetricsResult? metrics;
+    private MudForm form;
+    private string selectedAlgorithm = "linear"; 
+    private string linearAlgorithm = "linear";
+    private string treeAlgorithm = "tree";
+    private string lbfgsAlgorithm = "lbfgs";
+    private string selectedJobType;
+    private IEnumerable<string> _selectedTraits = new HashSet<string>();
+    private float? predictedPay;
+    private string placeOfWork = "";
+
+    private readonly string[] jobTypes = new[]
+    {
+        "Administrativni poslovi", "Anketiranje / Služba za korisnike", "Ekonomija, računovodstvo i financije", "Fizički poslovi", "IT poslovi, elektrotehnika i strojarstvo", "Promotivne aktivnosti", "Rad s djecom/animator", "Rad u skladištu/proizvodnji", "Razno", "Studentske prakse", "Transport i dostava", "Trgovina", "Turizam i ugostiteljstvo", "Zdravstvo", "Znanost i obrazovanje"
+    };
+    private readonly string[] traits = new[]
+    {
+        "Komunikativnost", "Iskrenost", "Poštenje", "Druželjubivost", "Odgovornost", "Pouzdanost", "Marljivost", "Adaptabilnost", "Otpornost", "Fleksibilnost", "Samomotiviranost", "Entuzijazam", "Kreativnost", "Kritično razmišljanje", "Inovativnost", "Timski rad", "Empatičnost", "Organizacija", "Otvorenost", "Profesionalnost", "Etičnost", "Strpljenje", "Ambicija", "Odlučnost", "Digitalna spretnost", "Urednost", "Smisao za ljepotu", "Samostalnost", "Motiviranost", "Detaljnost", "Samopouzdanost", "Snalažljivost", "Predanost", "Elokventnost", "Sistematičnost", "Pristojnost", "Dosljednost", "Preciznost", "Pozitivnost", "Točnost", "Spretnost"
+    };
+
+    private async Task TrainModels()
+    {
+        loading = true;
+        predictedPay = null;
+        StateHasChanged();
+        metrics = await _http.GetFromJsonAsync<AllJobPayPredictionMetricsResult>("Jobs/ml/metrics");
+        loading = false;
+    }
+
+    private async Task PredictPay()
+    {
+        await form.Validate();
+        if (!form.IsValid) return;
+        var req = new PredictPayRequest
+        {
+            Type = selectedJobType,
+            PlaceOfWork = "", 
+            RequiredTraits = _selectedTraits.Take(5).ToList()
+        };
+        var resp = await _http.PostAsJsonAsync($"Jobs/predict/{selectedAlgorithm}", req);
+        if (resp.IsSuccessStatusCode)
+        {
+            predictedPay = await resp.Content.ReadFromJsonAsync<float>();
+        }
+    }
+}

@@ -1,0 +1,38 @@
+@using MudBlazor
+@inject NavigationManager Nav
+
+<MudNavMenu>
+    <MudNavLink Href="@($"/student/{StudentIdFromUrl}/jobs")" Match="NavLinkMatch.All">
+        Traži
+    </MudNavLink>
+    <MudNavLink Href="@($"/student/{StudentIdFromUrl}/rate")" Match="NavLinkMatch.All">
+        Ocijeni
+    </MudNavLink>
+    <MudNavLink Href="@($"/student/{StudentIdFromUrl}/profile")" Match="NavLinkMatch.All">
+        Moje ocjene
+    </MudNavLink>
+    <MudNavLink Href="@($"/student/{StudentIdFromUrl}/predict")" Match="NavLinkMatch.All">
+        Predvidi satnicu
+    </MudNavLink>
+</MudNavMenu>
+
+@code {
+    private string StudentIdFromUrl
+    {
+        get
+        {
+            try
+            {
+                var uri = new Uri(Nav.Uri);
+                var segments = uri.Segments; 
+                if (segments.Length >= 3)
+                    return segments[2].TrimEnd('/');
+            }
+            catch
+            {
+            }
+
+            return string.Empty;
+        }
+    }
+}

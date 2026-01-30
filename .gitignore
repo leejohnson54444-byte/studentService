@@ -1,0 +1,89 @@
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio files
+.vs/
+*.user
+*.userosscache
+*.sln.docstates
+*.suo
+*.cache
+*.vsidx
+*.vsix
+
+# User-specific files (MonoDevelop/Xamarin Studio)
+*.userprefs
+
+# NuGet
+*.nupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+
+# Windows image file caches
+Thumbs.db
+ehthumbs.db
+
+# Folder config file
+Desktop.ini
+
+# Mac
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# =========================
+# SECRETS - NEVER COMMIT
+# =========================
+appsettings.Development.json
+appsettings.Local.json
+appsettings.Secrets.json
+**/appsettings.*.local.json
+secrets.json
+.env
+.env.*
+!.env.example
+
+# User secrets
+secrets/
+**/secrets/
+
+# Docker environment files with secrets
+docker-compose.override.yml
+docker-compose.local.yml
+.docker-env
+
+# Certificate files
+*.pfx
+*.p12
+*.pem
+*.key
+
+# MLflow models (large files)
+models/
+**/models/
+
+# Test results
+[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+
+# Resharper
+_ReSharper*/
+*.[Rr]e[Ss]harper
+
+# Publish output
+publish/
